@@ -163,16 +163,19 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     async_add_devices(dev)
 
 
+
 class BME680Handler:
     """BME680 sensor working in i2C bus."""
 
-    def __init__(self, sensor, aq=False, burn_in_time=300):
+    def __init__(self, sensor, air_quality=False, burn_in_time=300, hum_baseline=40, hum_weighting=0.25):
         """Initialize the sensor handler."""
         self.sensor = sensor
         self.sample_ok = False
-        if aq:
-            self.aq_calibrated = False
+        self._aq_calibrated = False
+        self._hum_baseline = hum_baseline
+        self._hum_weighting = hum_weighting
 
+        if air_quality:
             import threading
             threading.Thread(
                     target=self._calibrate_aq, 
@@ -181,32 +184,72 @@ class BME680Handler:
             ).start()
         self.update()
 
+
     def _calibrate_aq(self, burn_in_time):
-        if self.aq_calibrated:
-            return
-        import time
-        
-        start_time = time.time()
-        curr_time = time.time()
-        burn_in_data =[]
-
-        _LOGGER.info("Beginning {0} second gas sensor burn in for AirQuality baseline".format(burn_in_time))
-        while curr_time - start_time < burn_in_time:
+        """Calibrate the Air Quuality Gas Baseline"""
+        if not self.aq_calibrated:
+            import time
+            
+            start_time = time.time()
             curr_time = time.time()
-            if self.sensor.get_sensor_data() and self.sensor.data.heat_stable:
-                gas = self.sensor.data.gas_resistance
-                burn_in_data.append(gas)
-                
-                time.sleep(1)
+            burn_in_data =[]
 
-        self.gas_baseline = sum(burn_in_data[-50:]) / 50.0
-        self.aq_calibrated = True
-        _LOGGER.info("Completed gas sensor burn in for AirQuality baseline")
+            _LOGGER.info("Beginning {0} second gas sensor burn in for AirQuality baseline".format(burn_in_time))
+            while curr_time - start_time < burn_in_time:
+                curr_time = time.time()
+                if self.sensor.get_sensor_data() and self.sensor.data.heat_stable:
+                    gas = self.sensor.data.gas_resistance
+                    burn_in_data.append(gas)
+                    
+                    time.sleep(1)
+
+            self._gas_baseline = sum(burn_in_data[-50:]) / 50.0
+            self._aq_calibrated = True
+            _LOGGER.info("Completed gas sensor burn in for AirQuality baseline")
+        else:
+            return
+
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     def update(self):
         """Read sensor data."""
         self.sample_ok = self.sensor.get_sensor_data()
+
+    def calculate_aq_score(self):
+        """Calculate the Air Qulaity Score"""
+        if self.aq_calibrated and self.sensor.data.heat_stable:
+            # Set the humidity baseline to 40%, an optimal indoor humidity.
+            hum_baseline = self._hum_baseline
+
+            # This sets the balance between humidity and gas reading in the
+            # calculation of the air quality score (25:75, humidity:gas)
+            hum_weighting = self._hum_weighting
+
+            gas_baseline = self.gas_baseline
+
+            gas_resistance = self.sensor.data.gas_resistance
+            gas_offset = gas_baseline - gas
+
+            hum = self.sensor.data.humidity
+            hum_offset = hum - hum_baseline
+
+            # Calculate hum_score as the distance from the hum_baseline.
+            if hum_offset > 0:
+                hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * (hum_weighting * 100)
+            else:
+                hum_score = (hum_baseline + hum_offset) / hum_baseline * (hum_weighting * 100)
+
+            # Calculate gas_score as the distance from the gas_baseline.
+            if gas_offset > 0:
+                gas_score = (gas_resistance / gas_baseline) * (100 - (hum_weighting * 100))
+            else:
+                gas_score = 100 - (hum_weighting * 100)
+
+            # Calculate air_quality_score.
+            return = hum_score + gas_score
+        else:
+            return None
+
 
 
 class BME680Sensor(Entity):
@@ -255,35 +298,7 @@ class BME680Sensor(Entity):
                 if self.bme680_client.sensor.data.heat_stable:
                     self._state = int(round(self.bme680_client.sensor.data.gas_resistance, 0))
             elif self.type == SENSOR_AQ:
-                if self.bme680_client.aq_calibrated and self.bme_client.sensor.data.heat_stable:
-                    # Set the humidity baseline to 40%, an optimal indoor humidity.
-                    hum_baseline = 40.0
-
-                    # This sets the balance between humidity and gas reading in the
-                    # calculation of air_quality_score (25:75, humidity:gas)
-                    hum_weighting = 0.25
-
-                    gas_baseline = self.bme_client.gas_baseline
-
-                    gas = sensor.data.gas_resistance
-                    gas_offset = gas_baseline - gas
-
-                    hum = sensor.data.humidity
-                    hum_offset = hum - hum_baseline
-
-                    # Calculate hum_score as the distance from the hum_baseline.
-                    if hum_offset > 0:
-                        hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * (hum_weighting * 100)
-                    else:
-                        hum_score = (hum_baseline + hum_offset) / hum_baseline * (hum_weighting * 100)
-
-                    # Calculate gas_score as the distance from the gas_baseline.
-                    if gas_offset > 0:
-                        gas_score = (gas / gas_baseline) * (100 - (hum_weighting * 100))
-                    else:
-                        gas_score = 100 - (hum_weighting * 100)
-
-                    # Calculate air_quality_score.
-                    self._state = hum_score + gas_score
+                self._state = self.bme680_client.calculate_aq_score() 
         else:
             _LOGGER.warn("Bad update of sensor.%s", self.name)
+
