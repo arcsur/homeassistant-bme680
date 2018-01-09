@@ -29,6 +29,8 @@ CONF_OVERSAMPLING_HUM = 'oversampling_humidity'
 CONF_FILTER_SIZE = 'filter_size'
 CONF_GAS_HEATER_TEMP = 'gas_heater_temperature'
 CONF_GAS_HEATER_DURATION = 'gas_heater_duration'
+CONF_AQ_HUM_BASELINE = 'aq_humidity_baseline'
+CONF_AQ_HUM_WEIGHTING = 'aq_humidity_bias'
 
 
 DEFAULT_NAME = 'BME680 Sensor'
@@ -39,7 +41,9 @@ DEFAULT_OVERSAMPLING_PRES = 4  # Pressure oversampling x 4
 DEFAULT_OVERSAMPLING_HUM = 2  # Humidity oversampling x 2
 DEFAULT_FILTER_SIZE = 3  # IIR Filter Size
 DEFAULT_GAS_HEATER_TEMP = 320 # Temperature in celsius 200 - 400
-DEFAULT_GAS_HEATER_DURATION = 150 #Heater duration in ms 1 - 4032
+DEFAULT_GAS_HEATER_DURATION = 150 # Heater duration in ms 1 - 4032
+DEFAULT_AQ_HUM_BASELINE = 40 # 40%, an optimal indoor humidity.
+DEFAULT_AQ_HUM_WEIGHTING = 25 # 25% Weighting of humidity to gas reading in air quality score
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=3)
 
@@ -76,7 +80,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_GAS_HEATER_TEMP, default=DEFAULT_GAS_HEATER_TEMP): 
         vol.All(vol.Coerce(int), vol.Range(200, 400)),
     vol.Optional(CONF_GAS_HEATER_DURATION, default=DEFAULT_GAS_HEATER_DURATION): 
-        vol.All(vol.Coerce(int), vol.Range(1, 4032))
+        vol.All(vol.Coerce(int), vol.Range(1, 4032)),
+    vol.Optional(CONF_AQ_HUM_BASELINE, default=DEFAULT_AQ_HUM_BASELINE): 
+        vol.All(vol.Coerce(int), vol.Range(1, 100)),
+    vol.Optional(CONF_AQ_HUM_WEIGHTING, default=DEFAULT_AQ_HUM_WEIGHTING): 
+        vol.All(vol.Coerce(float), vol.Range(0.0, 100.0))/100,
 })
 
 
@@ -148,7 +156,7 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     sensor_handler = yield from hass.async_add_job(BME680Handler, sensor, 
         True if SENSOR_AQ in config[CONF_MONITORED_CONDITIONS] else False
     )
-    yield from asyncio.sleep(0.5) #Wait for device to stabilize
+    yield from asyncio.sleep(0.5) # Wait for device to stabilize
     if not sensor_handler.sample_ok:
         _LOGGER.error("BME680 sensor failed to Initialize")
         return False
@@ -217,7 +225,7 @@ class BME680Handler:
         self.sample_ok = self.sensor.get_sensor_data()
 
     def calculate_aq_score(self):
-        """Calculate the Air Qulaity Score"""
+        """Calculate the Air Quality Score"""
         if self._aq_calibrated and self.sensor.data.heat_stable:
             # Set the humidity baseline to 40%, an optimal indoor humidity.
             hum_baseline = self._hum_baseline
@@ -226,7 +234,7 @@ class BME680Handler:
             # calculation of the air quality score (25:75, humidity:gas)
             hum_weighting = self._hum_weighting
 
-            gas_baseline = self.gas_baseline
+            gas_baseline = self._gas_baseline
 
             gas_resistance = self.sensor.data.gas_resistance
             gas_offset = gas_baseline - gas
