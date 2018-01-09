@@ -308,7 +308,7 @@ class BME680Sensor(Entity):
                 if self.bme680_client.sensor.data.heat_stable:
                     self._state = int(round(self.bme680_client.sensor.data.gas_resistance, 0))
             elif self.type == SENSOR_AQ:
-                self._state = self.bme680_client.calculate_aq_score() 
+                self._state = round(self.bme680_client.calculate_aq_score(), 1) 
         else:
             _LOGGER.warn("Bad update of sensor.%s", self.name)
 
