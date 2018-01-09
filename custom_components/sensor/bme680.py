@@ -29,6 +29,7 @@ CONF_OVERSAMPLING_HUM = 'oversampling_humidity'
 CONF_FILTER_SIZE = 'filter_size'
 CONF_GAS_HEATER_TEMP = 'gas_heater_temperature'
 CONF_GAS_HEATER_DURATION = 'gas_heater_duration'
+CONF_AQ_BURN_IN_TIME = 'aq_burn_in_time'
 CONF_AQ_HUM_BASELINE = 'aq_humidity_baseline'
 CONF_AQ_HUM_WEIGHTING = 'aq_humidity_bias'
 
@@ -42,6 +43,7 @@ DEFAULT_OVERSAMPLING_HUM = 2  # Humidity oversampling x 2
 DEFAULT_FILTER_SIZE = 3  # IIR Filter Size
 DEFAULT_GAS_HEATER_TEMP = 320 # Temperature in celsius 200 - 400
 DEFAULT_GAS_HEATER_DURATION = 150 # Heater duration in ms 1 - 4032
+DEFAULT_AQ_BURN_IN_TIME = 300 # 300 second burn in time for AQ gas measurements
 DEFAULT_AQ_HUM_BASELINE = 40 # 40%, an optimal indoor humidity.
 DEFAULT_AQ_HUM_WEIGHTING = 25 # 25% Weighting of humidity to gas reading in air quality score
 
@@ -68,7 +70,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_I2C_ADDRESS, default=DEFAULT_I2C_ADDRESS): cv.string,
     vol.Optional(CONF_MONITORED_CONDITIONS, default=DEFAULT_MONITORED):
         vol.All(cv.ensure_list, [vol.In(SENSOR_TYPES)]),
-    vol.Optional(CONF_I2C_BUS, default=DEFAULT_I2C_BUS): vol.Coerce(int),
+    vol.Optional(CONF_I2C_BUS, default=DEFAULT_I2C_BUS): cv.positive_int,
     vol.Optional(CONF_OVERSAMPLING_TEMP, default=DEFAULT_OVERSAMPLING_TEMP): 
         vol.All(vol.Coerce(int), vol.In(OVERSAMPLING_VALUES)),
     vol.Optional(CONF_OVERSAMPLING_PRES, default=DEFAULT_OVERSAMPLING_PRES): 
@@ -81,6 +83,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
         vol.All(vol.Coerce(int), vol.Range(200, 400)),
     vol.Optional(CONF_GAS_HEATER_DURATION, default=DEFAULT_GAS_HEATER_DURATION): 
         vol.All(vol.Coerce(int), vol.Range(1, 4032)),
+    vol.Optional(CONF_AQ_BURN_IN_TIME, default=DEFAULT_AQ_BURN_IN_TIME): cv.positive_int,
     vol.Optional(CONF_AQ_HUM_BASELINE, default=DEFAULT_AQ_HUM_BASELINE): 
         vol.All(vol.Coerce(int), vol.Range(1, 100)),
     vol.Optional(CONF_AQ_HUM_WEIGHTING, default=DEFAULT_AQ_HUM_WEIGHTING): 
@@ -154,7 +157,10 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
         return False
 
     sensor_handler = yield from hass.async_add_job(BME680Handler, sensor, 
-        True if SENSOR_AQ in config[CONF_MONITORED_CONDITIONS] else False
+        True if SENSOR_AQ in config[CONF_MONITORED_CONDITIONS] else False,
+        config[CONF_AQ_BURN_IN_TIME],
+        config[CONF_AQ_HUM_BASELINE],
+        config[CONF_AQ_HUM_WEIGHTING]
     )
     yield from asyncio.sleep(0.5) # Wait for device to stabilize
     if not sensor_handler.sample_ok:
@@ -176,7 +182,7 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
 class BME680Handler:
     """BME680 sensor working in i2C bus."""
 
-    def __init__(self, sensor, air_quality=False, burn_in_time=300, hum_baseline=40, hum_weighting=0.25):
+    def __init__(self, sensor, air_quality=False, burn_in_time=300, hum_baseline=40, hum_weighting=25):
         """Initialize the sensor handler."""
         self.sensor = sensor
         self.sample_ok = False
