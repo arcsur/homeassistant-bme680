@@ -148,6 +148,7 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     sensor_handler = yield from hass.async_add_job(BME680Handler, sensor, 
         True if SENSOR_AQ in config[CONF_MONITORED_CONDITIONS] else False
     )
+    yield from asyncio.sleep(0.5) #Wait for device to stabilize
     if not sensor_handler.sample_ok:
         _LOGGER.error("BME680 sensor failed to Initialize")
         return False
@@ -186,8 +187,8 @@ class BME680Handler:
 
 
     def _calibrate_aq(self, burn_in_time):
-        """Calibrate the Air Quuality Gas Baseline"""
-        if not self.aq_calibrated:
+        """Calibrate the Air Quality Gas Baseline"""
+        if not self._aq_calibrated:
             import time
             
             start_time = time.time()
@@ -217,7 +218,7 @@ class BME680Handler:
 
     def calculate_aq_score(self):
         """Calculate the Air Qulaity Score"""
-        if self.aq_calibrated and self.sensor.data.heat_stable:
+        if self._aq_calibrated and self.sensor.data.heat_stable:
             # Set the humidity baseline to 40%, an optimal indoor humidity.
             hum_baseline = self._hum_baseline
 
