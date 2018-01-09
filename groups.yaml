@@ -1,0 +1,8 @@
+climate:
+  name: Climate
+  entities:
+    - sensor.bme680_sensor_temperature
+    - sensor.bme680_sensor_humidity
+    - sensor.bme680_sensor_pressure
+    - sensor.bme680_sensor_air_quality
+

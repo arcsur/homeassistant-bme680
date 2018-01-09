@@ -1,0 +1,12 @@
+sensor.bme680_sensor_temperature:
+  icon: mdi:thermometer
+  friendly_name: Temperature
+sensor.bme680_sensor_humidity:
+  icon: mdi:water
+  friendly_name: Humidity
+sensor.bme680_sensor_pressure:
+  icon: mdi:gauge
+  friendly_name: Pressure
+sensor.bme680_sensor_air_quality:
+  icon: mdi:blur
+  friendly_name: Air Quality
