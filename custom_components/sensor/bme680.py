@@ -246,7 +246,7 @@ class BME680Handler:
                 gas_score = 100 - (hum_weighting * 100)
 
             # Calculate air_quality_score.
-            return = hum_score + gas_score
+            return hum_score + gas_score
         else:
             return None
 
