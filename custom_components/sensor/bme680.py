@@ -84,7 +84,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_AQ_HUM_BASELINE, default=DEFAULT_AQ_HUM_BASELINE): 
         vol.All(vol.Coerce(int), vol.Range(1, 100)),
     vol.Optional(CONF_AQ_HUM_WEIGHTING, default=DEFAULT_AQ_HUM_WEIGHTING): 
-        vol.All(vol.Coerce(float), vol.Range(0.0, 100.0))/100,
+        vol.All(vol.Coerce(int), vol.Range(1, 100)),
 })
 
 
@@ -227,34 +227,29 @@ class BME680Handler:
     def calculate_aq_score(self):
         """Calculate the Air Quality Score"""
         if self._aq_calibrated and self.sensor.data.heat_stable:
-            # Set the humidity baseline to 40%, an optimal indoor humidity.
             hum_baseline = self._hum_baseline
-
-            # This sets the balance between humidity and gas reading in the
-            # calculation of the air quality score (25:75, humidity:gas)
             hum_weighting = self._hum_weighting
-
             gas_baseline = self._gas_baseline
 
             gas_resistance = self.sensor.data.gas_resistance
-            gas_offset = gas_baseline - gas
+            gas_offset = gas_baseline - gas_resistance
 
             hum = self.sensor.data.humidity
             hum_offset = hum - hum_baseline
 
             # Calculate hum_score as the distance from the hum_baseline.
             if hum_offset > 0:
-                hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * (hum_weighting * 100)
+                hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * hum_weighting
             else:
-                hum_score = (hum_baseline + hum_offset) / hum_baseline * (hum_weighting * 100)
+                hum_score = (hum_baseline + hum_offset) / hum_baseline * hum_weighting
 
             # Calculate gas_score as the distance from the gas_baseline.
             if gas_offset > 0:
-                gas_score = (gas_resistance / gas_baseline) * (100 - (hum_weighting * 100))
+                gas_score = (gas_resistance / gas_baseline) * (100 - hum_weighting)
             else:
-                gas_score = 100 - (hum_weighting * 100)
+                gas_score = 100 - hum_weighting
 
-            # Calculate air_quality_score.
+            # Calculate air quality score.
             return hum_score + gas_score
         else:
             return None
