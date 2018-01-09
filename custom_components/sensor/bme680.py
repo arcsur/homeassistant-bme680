@@ -204,6 +204,8 @@ class BME680Handler:
         """Calibrate the Air Quality Gas Baseline"""
         if not self._aq_calibrated:
             import time
+
+            time.sleep(1) # Pause to allow inital data read for device validation. 
             
             start_time = time.time()
             curr_time = time.time()
