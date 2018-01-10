@@ -156,7 +156,10 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
         return False
 
     sensor_handler = yield from hass.async_add_job(BME680Handler, sensor, 
-        True if SENSOR_AQ in config[CONF_MONITORED_CONDITIONS] else False,
+        True if (
+                SENSOR_GAS in config[CONF_MONITORED_CONDITIONS] or
+                SENSOR_AQ in config[CONF_MONITORED_CONDITIONS]
+                ) else False,
         config[CONF_AQ_BURN_IN_TIME],
         config[CONF_AQ_HUM_BASELINE],
         config[CONF_AQ_HUM_WEIGHTING]
