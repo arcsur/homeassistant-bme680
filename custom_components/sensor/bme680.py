@@ -47,8 +47,6 @@ DEFAULT_AQ_BURN_IN_TIME = 300 # 300 second burn in time for AQ gas measurements
 DEFAULT_AQ_HUM_BASELINE = 40 # 40%, an optimal indoor humidity.
 DEFAULT_AQ_HUM_WEIGHTING = 25 # 25% Weighting of humidity to gas reading in air quality score
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=3)
-
 SENSOR_TEMP = 'temperature'
 SENSOR_HUMID = 'humidity'
 SENSOR_PRESS = 'pressure'
@@ -97,6 +95,7 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     from smbus import SMBus
     import bme680
 
+    sensor_handler = None
     SENSOR_TYPES[SENSOR_TEMP][1] = hass.config.units.temperature_unit
     name = config.get(CONF_NAME)
     i2c_address = config.get(CONF_I2C_ADDRESS)
@@ -163,7 +162,7 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
         config[CONF_AQ_HUM_WEIGHTING]
     )
     yield from asyncio.sleep(0.5) # Wait for device to stabilize
-    if not sensor_handler.sample_ok:
+    if not sensor_handler.sensor_data.temperature:
         _LOGGER.error("BME680 sensor failed to Initialize")
         return False
 
@@ -181,28 +180,36 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
 
 class BME680Handler:
     """BME680 sensor working in i2C bus."""
+    class SensorData:
+        def __init__(self):
+            self.temperature = None
+            self.humidity = None
+            self.pressure = None
+            self.gas_resistance = None
+            self.air_quality = None
 
-    def __init__(self, sensor, air_quality=False, burn_in_time=300, hum_baseline=40, hum_weighting=25):
+    def __init__(self, sensor, gas_measurement=False, burn_in_time=300, hum_baseline=40, hum_weighting=25):
         """Initialize the sensor handler."""
-        self.sensor = sensor
-        self.sample_ok = False
-        self._aq_calibrated = False
+        self.sensor_data = BME680Handler.SensorData()
+        self._sensor = sensor
+        self._gas_sensor_running = False
         self._hum_baseline = hum_baseline
         self._hum_weighting = hum_weighting
 
-        if air_quality:
+        if gas_measurement:
             import threading
             threading.Thread(
-                    target=self._calibrate_aq, 
+                    target=self._run_gas_sensor, 
                     kwargs={'burn_in_time': burn_in_time},
-                    name='BME680Handler_calibrate_aq'
+                    name='BME680Handler_run_gas_sensor'
             ).start()
-        self.update()
+        self.update(first_read=True)
 
 
-    def _calibrate_aq(self, burn_in_time):
+    def _run_gas_sensor(self, burn_in_time):
         """Calibrate the Air Quality Gas Baseline"""
-        if not self._aq_calibrated:
+        if not self._gas_sensor_running:
+            self._gas_sensor_running = True
             import time
 
             time.sleep(1) # Pause to allow inital data read for device validation. 
@@ -211,58 +218,65 @@ class BME680Handler:
             curr_time = time.time()
             burn_in_data =[]
 
-            _LOGGER.info("Beginning {} second gas sensor burn in for AirQuality baseline".format(burn_in_time))
+            _LOGGER.info("Beginning {} second gas sensor burn in for Air Quality baseline".format(burn_in_time))
             while curr_time - start_time < burn_in_time:
                 curr_time = time.time()
-                if self.sensor.get_sensor_data() and self.sensor.data.heat_stable:
-                    gas_resistance = self.sensor.data.gas_resistance
+                if self._sensor.get_sensor_data() and self._sensor.data.heat_stable:
+                    gas_resistance = self._sensor.data.gas_resistance
                     burn_in_data.append(gas_resistance)
+                    self.sensor_data.gas_resistance = gas_resistance
                     _LOGGER.debug("AQ Gas Resistance Baseline reading {:.2f} Ohms".format(gas_resistance))
                     time.sleep(1)
 
             _LOGGER.debug("AQ Gas Resistance Burn In Data (Size: {:d}): \n\t{!r}".format(len(burn_in_data), burn_in_data))
             self._gas_baseline = sum(burn_in_data[-50:]) / 50.0
+            _LOGGER.info("Completed gas sensor burn in for Air Quality baseline")
             _LOGGER.info("AQ Gas Resistance Baseline: {:f}".format(self._gas_baseline))
-            self._aq_calibrated = True
-            _LOGGER.info("Completed gas sensor burn in for AirQuality baseline")
+            while True:
+                if self._sensor.get_sensor_data() and self._sensor.data.heat_stable:
+                    self.sensor_data.gas_resistance = self._sensor.data.gas_resistance
+                    self.sensor_data.air_quality = self._calculate_aq_score()
+                    time.sleep(1)
         else:
             return
 
 
-    @Throttle(MIN_TIME_BETWEEN_UPDATES)
-    def update(self):
+    def update(self, first_read=False):
         """Read sensor data."""
-        self.sample_ok = self.sensor.get_sensor_data()
+        if first_read:
+            #Attempt first read, it almost always fails first attempt
+            self._sensor.get_sensor_data()
+        if self._sensor.get_sensor_data():
+            self.sensor_data.temperature = self._sensor.data.temperature
+            self.sensor_data.humidity = self._sensor.data.humidity
+            self.sensor_data.pressure = self._sensor.data.pressure
 
-    def calculate_aq_score(self):
+    def _calculate_aq_score(self):
         """Calculate the Air Quality Score"""
-        if self._aq_calibrated and self.sensor.data.heat_stable:
-            hum_baseline = self._hum_baseline
-            hum_weighting = self._hum_weighting
-            gas_baseline = self._gas_baseline
+        hum_baseline = self._hum_baseline
+        hum_weighting = self._hum_weighting
+        gas_baseline = self._gas_baseline
 
-            gas_resistance = self.sensor.data.gas_resistance
-            gas_offset = gas_baseline - gas_resistance
+        gas_resistance = self.sensor_data.gas_resistance
+        gas_offset = gas_baseline - gas_resistance
 
-            hum = self.sensor.data.humidity
-            hum_offset = hum - hum_baseline
+        hum = self.sensor_data.humidity
+        hum_offset = hum - hum_baseline
 
-            # Calculate hum_score as the distance from the hum_baseline.
-            if hum_offset > 0:
-                hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * hum_weighting
-            else:
-                hum_score = (hum_baseline + hum_offset) / hum_baseline * hum_weighting
-
-            # Calculate gas_score as the distance from the gas_baseline.
-            if gas_offset > 0:
-                gas_score = (gas_resistance / gas_baseline) * (100 - hum_weighting)
-            else:
-                gas_score = 100 - hum_weighting
-
-            # Calculate air quality score.
-            return hum_score + gas_score
+        # Calculate hum_score as the distance from the hum_baseline.
+        if hum_offset > 0:
+            hum_score = (100 - hum_baseline - hum_offset) / (100 - hum_baseline) * hum_weighting
         else:
-            return None
+            hum_score = (hum_baseline + hum_offset) / hum_baseline * hum_weighting
+
+        # Calculate gas_score as the distance from the gas_baseline.
+        if gas_offset > 0:
+            gas_score = (gas_resistance / gas_baseline) * (100 - hum_weighting)
+        else:
+            gas_score = 100 - hum_weighting
+
+        # Calculate air quality score.
+        return hum_score + gas_score
 
 
 
@@ -298,23 +312,19 @@ class BME680Sensor(Entity):
     def async_update(self):
         """Get the latest data from the BME680 and update the states."""
         yield from self.hass.async_add_job(self.bme680_client.update)
-        if self.bme680_client.sample_ok:
-            if self.type == SENSOR_TEMP:
-                temperature = round(self.bme680_client.sensor.data.temperature, 1)
-                if self.temp_unit == TEMP_FAHRENHEIT:
-                    temperature = round(celsius_to_fahrenheit(temperature), 1)
-                self._state = temperature
-            elif self.type == SENSOR_HUMID:
-                self._state = round(self.bme680_client.sensor.data.humidity, 1)
-            elif self.type == SENSOR_PRESS:
-                self._state = round(self.bme680_client.sensor.data.pressure, 1)
-            elif self.type == SENSOR_GAS:
-                if self.bme680_client.sensor.data.heat_stable:
-                    self._state = int(round(self.bme680_client.sensor.data.gas_resistance, 0))
-            elif self.type == SENSOR_AQ:
-                aq_score = self.bme680_client.calculate_aq_score()
-                if aq_score is not None:
-                    self._state = round(aq_score, 1) 
-        else:
-            _LOGGER.warn("Bad update of sensor.%s", self.name)
+        if self.type == SENSOR_TEMP:
+            temperature = round(self.bme680_client.sensor_data.temperature, 1)
+            if self.temp_unit == TEMP_FAHRENHEIT:
+                temperature = round(celsius_to_fahrenheit(temperature), 1)
+            self._state = temperature
+        elif self.type == SENSOR_HUMID:
+            self._state = round(self.bme680_client.sensor_data.humidity, 1)
+        elif self.type == SENSOR_PRESS:
+            self._state = round(self.bme680_client.sensor_data.pressure, 1)
+        elif self.type == SENSOR_GAS:
+                self._state = int(round(self.bme680_client.sensor_data.gas_resistance, 0))
+        elif self.type == SENSOR_AQ:
+            aq_score = self.bme680_client.sensor_data.air_quality
+            if aq_score is not None:
+                self._state = round(aq_score, 1) 
 
