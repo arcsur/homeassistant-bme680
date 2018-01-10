@@ -211,16 +211,18 @@ class BME680Handler:
             curr_time = time.time()
             burn_in_data =[]
 
-            _LOGGER.info("Beginning {0} second gas sensor burn in for AirQuality baseline".format(burn_in_time))
+            _LOGGER.info("Beginning {} second gas sensor burn in for AirQuality baseline".format(burn_in_time))
             while curr_time - start_time < burn_in_time:
                 curr_time = time.time()
                 if self.sensor.get_sensor_data() and self.sensor.data.heat_stable:
-                    gas = self.sensor.data.gas_resistance
-                    burn_in_data.append(gas)
-                    
+                    gas_resistance = self.sensor.data.gas_resistance
+                    burn_in_data.append(gas_resistance)
+                    _LOGGER.debug("AQ Gas Resistance Baseline reading {:.2f} Ohms".format(gas_resistance))
                     time.sleep(1)
 
+            _LOGGER.debug("AQ Gas Resistance Burn In Data (Size: {:d}): \n\t{!r}".format(len(burn_in_data), burn_in_data))
             self._gas_baseline = sum(burn_in_data[-50:]) / 50.0
+            _LOGGER.info("AQ Gas Resistance Baseline: {:f}".format(self._gas_baseline))
             self._aq_calibrated = True
             _LOGGER.info("Completed gas sensor burn in for AirQuality baseline")
         else:
