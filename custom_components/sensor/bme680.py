@@ -41,11 +41,11 @@ DEFAULT_OVERSAMPLING_TEMP = 8  # Temperature oversampling x 8
 DEFAULT_OVERSAMPLING_PRES = 4  # Pressure oversampling x 4
 DEFAULT_OVERSAMPLING_HUM = 2  # Humidity oversampling x 2
 DEFAULT_FILTER_SIZE = 3  # IIR Filter Size
-DEFAULT_GAS_HEATER_TEMP = 320 # Temperature in celsius 200 - 400
-DEFAULT_GAS_HEATER_DURATION = 150 # Heater duration in ms 1 - 4032
-DEFAULT_AQ_BURN_IN_TIME = 300 # 300 second burn in time for AQ gas measurements
-DEFAULT_AQ_HUM_BASELINE = 40 # 40%, an optimal indoor humidity.
-DEFAULT_AQ_HUM_WEIGHTING = 25 # 25% Weighting of humidity to gas reading in air quality score
+DEFAULT_GAS_HEATER_TEMP = 320  # Temperature in celsius 200 - 400
+DEFAULT_GAS_HEATER_DURATION = 150  # Heater duration in ms 1 - 4032
+DEFAULT_AQ_BURN_IN_TIME = 300  # 300 second burn in time for AQ gas measurement
+DEFAULT_AQ_HUM_BASELINE = 40  # 40%, an optimal indoor humidity.
+DEFAULT_AQ_HUM_WEIGHTING = 25  # 25% Weighting of humidity to gas in AQ score
 
 SENSOR_TEMP = 'temperature'
 SENSOR_HUMID = 'humidity'
@@ -61,7 +61,7 @@ SENSOR_TYPES = {
 }
 DEFAULT_MONITORED = [SENSOR_TEMP, SENSOR_HUMID, SENSOR_PRESS, SENSOR_AQ]
 OVERSAMPLING_VALUES = set([0, 1, 2, 4, 8, 16])
-FILTER_VALUES  = set([0, 1, 3, 7, 15, 31, 63, 127])
+FILTER_VALUES = set([0, 1, 3, 7, 15, 31, 63, 127])
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
@@ -69,22 +69,24 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
     vol.Optional(CONF_MONITORED_CONDITIONS, default=DEFAULT_MONITORED):
         vol.All(cv.ensure_list, [vol.In(SENSOR_TYPES)]),
     vol.Optional(CONF_I2C_BUS, default=DEFAULT_I2C_BUS): cv.positive_int,
-    vol.Optional(CONF_OVERSAMPLING_TEMP, default=DEFAULT_OVERSAMPLING_TEMP): 
+    vol.Optional(CONF_OVERSAMPLING_TEMP, default=DEFAULT_OVERSAMPLING_TEMP):
         vol.All(vol.Coerce(int), vol.In(OVERSAMPLING_VALUES)),
-    vol.Optional(CONF_OVERSAMPLING_PRES, default=DEFAULT_OVERSAMPLING_PRES): 
+    vol.Optional(CONF_OVERSAMPLING_PRES, default=DEFAULT_OVERSAMPLING_PRES):
         vol.All(vol.Coerce(int), vol.In(OVERSAMPLING_VALUES)),
-    vol.Optional(CONF_OVERSAMPLING_HUM, default=DEFAULT_OVERSAMPLING_HUM): 
+    vol.Optional(CONF_OVERSAMPLING_HUM, default=DEFAULT_OVERSAMPLING_HUM):
         vol.All(vol.Coerce(int), vol.In(OVERSAMPLING_VALUES)),
-    vol.Optional(CONF_FILTER_SIZE, default=DEFAULT_FILTER_SIZE): 
+    vol.Optional(CONF_FILTER_SIZE, default=DEFAULT_FILTER_SIZE):
         vol.All(vol.Coerce(int), vol.In(FILTER_VALUES)),
-    vol.Optional(CONF_GAS_HEATER_TEMP, default=DEFAULT_GAS_HEATER_TEMP): 
+    vol.Optional(CONF_GAS_HEATER_TEMP, default=DEFAULT_GAS_HEATER_TEMP):
         vol.All(vol.Coerce(int), vol.Range(200, 400)),
-    vol.Optional(CONF_GAS_HEATER_DURATION, default=DEFAULT_GAS_HEATER_DURATION): 
+    vol.Optional(CONF_GAS_HEATER_DURATION,
+                 default=DEFAULT_GAS_HEATER_DURATION):
         vol.All(vol.Coerce(int), vol.Range(1, 4032)),
-    vol.Optional(CONF_AQ_BURN_IN_TIME, default=DEFAULT_AQ_BURN_IN_TIME): cv.positive_int,
-    vol.Optional(CONF_AQ_HUM_BASELINE, default=DEFAULT_AQ_HUM_BASELINE): 
+    vol.Optional(CONF_AQ_BURN_IN_TIME, default=DEFAULT_AQ_BURN_IN_TIME):
+        cv.positive_int,
+    vol.Optional(CONF_AQ_HUM_BASELINE, default=DEFAULT_AQ_HUM_BASELINE):
         vol.All(vol.Coerce(int), vol.Range(1, 100)),
-    vol.Optional(CONF_AQ_HUM_WEIGHTING, default=DEFAULT_AQ_HUM_WEIGHTING): 
+    vol.Optional(CONF_AQ_HUM_WEIGHTING, default=DEFAULT_AQ_HUM_WEIGHTING):
         vol.All(vol.Coerce(int), vol.Range(1, 100)),
 })
 
@@ -113,14 +115,17 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
             8: bme680.OS_8X,
             16: bme680.OS_16X
         }
-        yield from hass.async_add_job(sensor.set_temperature_oversample, 
-                os_lookup[config.get(CONF_OVERSAMPLING_TEMP)]
+        yield from hass.async_add_job(
+            sensor.set_temperature_oversample,
+            os_lookup[config.get(CONF_OVERSAMPLING_TEMP)]
         )
 
-        yield from hass.async_add_job(sensor.set_humidity_oversample, 
+        yield from hass.async_add_job(
+                sensor.set_humidity_oversample,
                 os_lookup[config.get(CONF_OVERSAMPLING_HUM)]
         )
-        yield from hass.async_add_job(sensor.set_pressure_oversample, 
+        yield from hass.async_add_job(
+                sensor.set_pressure_oversample,
                 os_lookup[config.get(CONF_OVERSAMPLING_PRES)]
         )
 
@@ -135,36 +140,46 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
             63: bme680.FILTER_SIZE_63,
             127: bme680.FILTER_SIZE_127
         }
-        yield from hass.async_add_job(sensor.set_filter, 
-                filter_lookup[config.get(CONF_FILTER_SIZE)]
+        yield from hass.async_add_job(
+            sensor.set_filter,
+            filter_lookup[config.get(CONF_FILTER_SIZE)]
         )
 
         # Configure the Gas Heater
-        if SENSOR_GAS in config[CONF_MONITORED_CONDITIONS] or SENSOR_AQ in config[CONF_MONITORED_CONDITIONS]:
-            yield from hass.async_add_job(sensor.set_gas_status, bme680.ENABLE_GAS_MEAS)
-            yield from hass.async_add_job(sensor.set_gas_heater_duration, 
-                    config[CONF_GAS_HEATER_DURATION]
+        if (
+            SENSOR_GAS in config[CONF_MONITORED_CONDITIONS] or
+            SENSOR_AQ in config[CONF_MONITORED_CONDITIONS]
+        ):
+            yield from hass.async_add_job(
+                sensor.set_gas_status, bme680.ENABLE_GAS_MEAS)
+            yield from hass.async_add_job(
+                sensor.set_gas_heater_duration,
+                config[CONF_GAS_HEATER_DURATION]
             )
-            yield from hass.async_add_job(sensor.set_gas_heater_temperature, 
-                    config[CONF_GAS_HEATER_TEMP]
+            yield from hass.async_add_job(
+                sensor.set_gas_heater_temperature,
+                config[CONF_GAS_HEATER_TEMP]
             )
             yield from hass.async_add_job(sensor.select_gas_heater_profile, 0)
         else:
-            yield from hass.async_add_job(sensor.set_gas_status, bme680.DISABLE_GAS_MEAS)
+            yield from hass.async_add_job(
+                sensor.set_gas_status, bme680.DISABLE_GAS_MEAS
+            )
     except (RuntimeError, IOError) as e:
         _LOGGER.error("BME680 sensor not detected at %s", i2c_address)
         return False
 
-    sensor_handler = yield from hass.async_add_job(BME680Handler, sensor, 
+    sensor_handler = yield from hass.async_add_job(
+        BME680Handler, sensor,
         True if (
                 SENSOR_GAS in config[CONF_MONITORED_CONDITIONS] or
                 SENSOR_AQ in config[CONF_MONITORED_CONDITIONS]
-                ) else False,
+        ) else False,
         config[CONF_AQ_BURN_IN_TIME],
         config[CONF_AQ_HUM_BASELINE],
         config[CONF_AQ_HUM_WEIGHTING]
     )
-    yield from asyncio.sleep(0.5) # Wait for device to stabilize
+    yield from asyncio.sleep(0.5)  # Wait for device to stabilize
     if not sensor_handler.sensor_data.temperature:
         _LOGGER.error("BME680 sensor failed to Initialize")
         return False
@@ -180,7 +195,6 @@ def async_setup_platform(hass, config, async_add_devices, discovery_info=None):
     async_add_devices(dev)
 
 
-
 class BME680Handler:
     """BME680 sensor working in i2C bus."""
     class SensorData:
@@ -191,7 +205,10 @@ class BME680Handler:
             self.gas_resistance = None
             self.air_quality = None
 
-    def __init__(self, sensor, gas_measurement=False, burn_in_time=300, hum_baseline=40, hum_weighting=25):
+    def __init__(
+                 self, sensor, gas_measurement=False,
+                 burn_in_time=300, hum_baseline=40, hum_weighting=25
+    ):
         """Initialize the sensor handler."""
         self.sensor_data = BME680Handler.SensorData()
         self._sensor = sensor
@@ -202,12 +219,11 @@ class BME680Handler:
         if gas_measurement:
             import threading
             threading.Thread(
-                    target=self._run_gas_sensor, 
-                    kwargs={'burn_in_time': burn_in_time},
-                    name='BME680Handler_run_gas_sensor'
+                target=self._run_gas_sensor,
+                kwargs={'burn_in_time': burn_in_time},
+                name='BME680Handler_run_gas_sensor'
             ).start()
         self.update(first_read=True)
-
 
     def _run_gas_sensor(self, burn_in_time):
         """Calibrate the Air Quality Gas Baseline"""
@@ -215,34 +231,43 @@ class BME680Handler:
             self._gas_sensor_running = True
             import time
 
-            time.sleep(1) # Pause to allow inital data read for device validation. 
-            
+            # Pause to allow inital data read for device validation.
+            time.sleep(1)
+
             start_time = time.time()
             curr_time = time.time()
-            burn_in_data =[]
+            burn_in_data = []
 
-            _LOGGER.info("Beginning {} second gas sensor burn in for Air Quality baseline".format(burn_in_time))
+            _LOGGER.info(("Beginning {} second gas sensor burn in for"
+                         "Air Quality").format(burn_in_time))
             while curr_time - start_time < burn_in_time:
                 curr_time = time.time()
-                if self._sensor.get_sensor_data() and self._sensor.data.heat_stable:
+                if (
+                    self._sensor.get_sensor_data() and
+                    self._sensor.data.heat_stable
+                ):
                     gas_resistance = self._sensor.data.gas_resistance
                     burn_in_data.append(gas_resistance)
                     self.sensor_data.gas_resistance = gas_resistance
-                    _LOGGER.debug("AQ Gas Resistance Baseline reading {:.2f} Ohms".format(gas_resistance))
+                    _LOGGER.debug(("AQ Gas Resistance Baseline reading {:.2f} "
+                                   "Ohms").format(gas_resistance))
                     time.sleep(1)
 
-            _LOGGER.debug("AQ Gas Resistance Burn In Data (Size: {:d}): \n\t{!r}".format(len(burn_in_data), burn_in_data))
+            _LOGGER.debug(("AQ Gas Resistance Burn In Data (Size: {:d}): "
+                          "\n\t{!r}").format(len(burn_in_data), burn_in_data))
             self._gas_baseline = sum(burn_in_data[-50:]) / 50.0
-            _LOGGER.info("Completed gas sensor burn in for Air Quality baseline")
+            _LOGGER.info("Completed gas sensor burn in for Air Quality")
             _LOGGER.info("AQ Gas Resistance Baseline: {:f}".format(self._gas_baseline))
             while True:
-                if self._sensor.get_sensor_data() and self._sensor.data.heat_stable:
+                if (
+                    self._sensor.get_sensor_data() and
+                    self._sensor.data.heat_stable
+                ):
                     self.sensor_data.gas_resistance = self._sensor.data.gas_resistance
                     self.sensor_data.air_quality = self._calculate_aq_score()
                     time.sleep(1)
         else:
             return
-
 
     def update(self, first_read=False):
         """Read sensor data."""
@@ -280,7 +305,6 @@ class BME680Handler:
 
         # Calculate air quality score.
         return hum_score + gas_score
-
 
 
 class BME680Sensor(Entity):
@@ -329,5 +353,4 @@ class BME680Sensor(Entity):
         elif self.type == SENSOR_AQ:
             aq_score = self.bme680_client.sensor_data.air_quality
             if aq_score is not None:
-                self._state = round(aq_score, 1) 
-
+                self._state = round(aq_score, 1)
