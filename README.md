@@ -9,6 +9,8 @@ Default sensors:
   
 Optional Sensor:
   - Gas Resistance
+  
+*Note that the default i2c_adress is 0x77 (Adafruit board) if you have Pimorini board you will probably want 0x76. If unsure run: i2cdetect -y 1*
 ___
 
 ### Example configuration.yaml
