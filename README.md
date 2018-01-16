@@ -19,7 +19,6 @@ ___
       
 ### Example configuration.yaml with all paramters
     sensor:
-      - platform: yr
       - platform: bme680
         name: BME680 Sensor
         i2c_bus: 1
