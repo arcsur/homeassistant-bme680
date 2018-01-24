@@ -1,3 +1,6 @@
+# As this has now been merged into the home-assistant/dev branch, no further development will be done on this repository/branch.
+
+
 # homeassistant-bme680
 BME680 Sensor Platform for Home Assistant
 
